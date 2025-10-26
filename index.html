@@ -4,10 +4,329 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Live Bracketed Calculator</title>
-  <meta name="description" content="A live bracketed calculator with instant results. Supports + - * / ^ % and parentheses.">
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#7c3aed; --accent-2:#06b6d4; --glass:rgba(255,255,255,0.03);
+      --success:#10b981; --danger:#ef4444; --mono:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background:linear-gradient(180deg,#071022 0%, #07172b 100%); color:#e6eef8;
+      display:flex; align-items:center; justify-content:center; padding:28px;
+    }
+    .card{width:780px; max-width:96vw; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:14px; padding:20px; box-shadow:0 10px 30px rgba(2,6,23,0.7); border:1px solid rgba(255,255,255,0.03)}
+    header{display:flex; align-items:center; gap:12px}
+    .logo{width:46px; height:46px; border-radius:10px; display:grid; place-items:center; background:linear-gradient(135deg,var(--accent),var(--accent-2)); font-weight:700; color:white}
+    h1{font-size:18px;margin:0}
+    p.lead{margin:6px 0 14px;color:var(--muted);font-size:13px}
+
+    .row{display:flex; gap:12px}
+    .left{flex:1}
+    .right{width:220px}
+
+    .entry{
+      background:var(--card);
+      border-radius:10px; padding:12px; font-size:20px; min-height:78px; display:flex; flex-direction:column; gap:8px; outline:none; border:1px solid rgba(255,255,255,0.03)
+    }
+    .input{
+      width:100%; font-family:var(--mono); font-size:20px; color: #e6eef8; background:transparent; border:0; outline:none; resize:none; line-height:1.2
+    }
+    .result{
+      display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:6px; color:var(--muted); font-size:13px
+    }
+    .value{font-family:var(--mono); font-size:26px; color:var(--accent-2);}
+    .err{color:var(--danger); font-weight:600}
+
+    .kbd{background:var(--glass); padding:6px 8px; border-radius:8px; font-size:13px; color:var(--muted)}
+
+    .controls{display:flex; gap:8px; margin-top:12px}
+    button{background:transparent; color:var(--accent-2); border:1px solid rgba(6,182,212,0.12); padding:8px 12px; border-radius:8px; cursor:pointer}
+    button.ghost{color:var(--muted); border:1px dashed rgba(255,255,255,0.03)}
+
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005)); border-radius:10px; padding:12px; border:1px solid rgba(255,255,255,0.02)}
+    .panel h3{margin:0 0 8px 0; font-size:13px}
+    .history{display:flex; flex-direction:column; gap:8px; max-height:300px; overflow:auto}
+    .hist-item{display:flex; flex-direction:column; gap:4px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.01); border:1px solid rgba(255,255,255,0.01)}
+    .hist-item .expr{font-family:var(--mono); font-size:14px; color:var(--muted)}
+    .hist-item .res{font-family:var(--mono); font-size:16px; color:var(--accent-2)}
+
+    footer{margin-top:14px; display:flex; justify-content:space-between; color:var(--muted); font-size:13px}
+
+    /* responsive */
+    @media (max-width:760px){.right{display:none}}
+  </style>
 </head>
 <body>
-  <h1>Placeholder</h1>
+  <div class="card">
+    <header>
+      <div class="logo">≈</div>
+      <div>
+        <h1>Live Bracketed Calculator</h1>
+        <p class="lead">Type expressions with parentheses — results update as you type (supports + - * / ^ % and unary -).</p>
+      </div>
+    </header>
+
+    <div style="height:14px"></div>
+
+    <div class="row">
+      <div class="left">
+        <div class="entry">
+          <textarea id="expr" class="input" rows="2" spellcheck="false" placeholder="Type expression, for example: (12+3.5)*2 - (4/2)"></textarea>
+
+          <div class="result">
+            <div>
+              <div style="font-size:12px;color:var(--muted)">Preview</div>
+              <div id="preview" class="value">—</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div id="status" class="err" aria-live="polite"></div>
+              <div style="display:flex;gap:8px">
+                <div class="kbd">Enter = commit</div>
+                <div class="kbd">Ctrl/Cmd + C = copy result</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <button id="copyBtn">Copy Result</button>
+            <button id="commitBtn">Save to history</button>
+            <button id="clearBtn" class="ghost">Clear</button>
+          </div>
+        </div>
+
+        <footer>
+          <div>Examples: <span style="color:var(--muted)">(3+4)*5, -2^2, 12.5%(of)  — see docs below</span></div>
+          <div style="opacity:0.9">Precision: <span id="precisionLabel">auto</span></div>
+        </footer>
+      </div>
+
+      <div class="right">
+        <div class="panel">
+          <h3>History</h3>
+          <div class="history" id="history" aria-live="polite"></div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="panel">
+          <h3>Supported</h3>
+          <div style="font-size:13px;color:var(--muted);line-height:1.4">
+            Operators: + - * / ^ (power) % (mod).<br>
+            Parentheses are supported — nested as deep as you like. Unary minus works: <code>-3*(2+4)</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// --- Lightweight, safe expression evaluator using Shunting-yard -> RPN evaluator ---
+// Supports: numbers, parentheses, + - * / ^ %, unary minus
+
+(function(){
+  const input = document.getElementById('expr');
+  const preview = document.getElementById('preview');
+  const status = document.getElementById('status');
+  const historyEl = document.getElementById('history');
+  const copyBtn = document.getElementById('copyBtn');
+  const commitBtn = document.getElementById('commitBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const precisionLabel = document.getElementById('precisionLabel');
+
+  let history = [];
+
+  function isDigit(ch){return /[0-9.]/.test(ch)}
+  function isWhite(ch){return /\s/.test(ch)}
+
+  const ops = {
+    '+':{prec:2, assoc:'L', fn:(a,b)=>a+b},
+    '-':{prec:2, assoc:'L', fn:(a,b)=>a-b},
+    '*':{prec:3, assoc:'L', fn:(a,b)=>a*b},
+    '/':{prec:3, assoc:'L', fn:(a,b)=>a/b},
+    '%':{prec:3, assoc:'L', fn:(a,b)=>a%b},
+    '^':{prec:4, assoc:'R', fn:(a,b)=>Math.pow(a,b)}
+  };
+
+  function tokenize(expr){
+    const toks = [];
+    let i=0;
+    while(i<expr.length){
+      const ch = expr[i];
+      if(isWhite(ch)){ i++; continue }
+      if(ch==='('||ch===')'){ toks.push({type:'paren', value:ch}); i++; continue }
+      if(ch in ops){ toks.push({type:'op', value:ch}); i++; continue }
+      // number (including decimal)
+      if(isDigit(ch) || (ch==='.' && isDigit(expr[i+1]))){
+        let j=i+1; while(j<expr.length && /[0-9.]/.test(expr[j])) j++;
+        const val = expr.slice(i,j);
+        if(val.split('.').length>2) throw new Error('Malformed number');
+        toks.push({type:'num', value:parseFloat(val)});
+        i=j; continue;
+      }
+      throw new Error('Unexpected character: "'+ch+'"');
+    }
+    return toks;
+  }
+
+  function toRPN(tokens){
+    const out = [];
+    const stack = [];
+    let prev = null;
+    for(let t of tokens){
+      if(t.type==='num'){ out.push(t); prev='num'; continue }
+      if(t.type==='op'){
+        // handle unary minus
+        if(t.value==='-' && (prev===null || (prev==='op') || (prev==='paren' && stack[stack.length-1]==='('))){
+          // convert to unary token 'u-'
+          t = {type:'op', value:'u-'};
+          // give it high precedence
+        }
+        if(t.value==='u-'){
+          stack.push(t); prev='op'; continue
+        }
+
+        while(stack.length){
+          const top = stack[stack.length-1];
+          if(top.type!=='op') break;
+          const topVal = top.value;
+          // unary on stack has highest prec
+          const topPrec = (topVal==='u-')?5:ops[topVal].prec;
+          const curPrec = ops[t.value].prec;
+          if((ops[t.value].assoc==='L' && curPrec<=topPrec) || (ops[t.value].assoc==='R' && curPrec<topPrec)){
+            out.push(stack.pop());
+          } else break;
+        }
+        stack.push(t); prev='op'; continue
+      }
+      if(t.type==='paren'){
+        if(t.value==='('){ stack.push('('); prev='paren'; continue }
+        // t.value === ')'
+        let found=false;
+        while(stack.length){
+          const top = stack.pop();
+          if(top==='('){ found=true; break }
+          out.push(top);
+        }
+        if(!found) throw new Error('Mismatched parentheses');
+        prev='paren'; continue
+      }
+    }
+    while(stack.length){
+      const top = stack.pop();
+      if(top==='(') throw new Error('Mismatched parentheses');
+      out.push(top);
+    }
+    return out;
+  }
+
+  function evalRPN(rpn){
+    const st = [];
+    for(const t of rpn){
+      if(t.type==='num'){ st.push(t.value); continue }
+      if(t.type==='op'){
+        if(t.value==='u-'){
+          if(st.length<1) throw new Error('Bad unary');
+          const a = st.pop(); st.push(-a); continue
+        }
+        const b = st.pop(); const a = st.pop();
+        if(a===undefined || b===undefined) throw new Error('Malformed expression');
+        const fn = ops[t.value].fn; const res = fn(a,b);
+        if(!isFinite(res)) throw new Error('Arithmetic error');
+        st.push(res);
+      }
+    }
+    if(st.length!==1) throw new Error('Malformed expression');
+    return st[0];
+  }
+
+  function evaluate(expr){
+    if(expr.trim()==='') return {ok:true,value:null};
+    // quick replacements: allow caret ^ as power (already handled), percentage syntax like 12% treated as 0.12
+    // naive: replace occurrences of number% with (number/100)
+    try{
+      const percentHandled = expr.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)');
+      const tokens = tokenize(percentHandled);
+      const rpn = toRPN(tokens);
+      const val = evalRPN(rpn);
+      return {ok:true, value:val};
+    }catch(err){
+      return {ok:false, error:err.message}
+    }
+  }
+
+  function formatNumber(v){
+    if(v===null) return '—';
+    // Round to 2 decimal places (correctly handling floating point errors),
+    // but only show decimals when necessary.
+    const rounded = Math.round((v + Number.EPSILON) * 100) / 100;
+    // If effectively an integer after rounding, show as integer
+    if(Math.abs(Math.round(rounded) - rounded) < 1e-12) return String(Math.round(rounded));
+    // Otherwise show up to 2 decimals but trim unnecessary trailing zeros (e.g. 1.50 -> 1.5)
+    return rounded.toFixed(2).replace(/\.0+$/,'').replace(/(\.[0-9]*?)0+$/,'$1');
+  }
+
+  function update(){
+    const expr = input.value;
+    const res = evaluate(expr);
+    if(res.ok){
+      status.textContent='';
+      preview.textContent = res.value===null ? '—' : formatNumber(res.value);
+      precisionLabel.textContent = (res.value===null)?'auto':(Number.isFinite(res.value)?String(res.value).length>12? '≈' : 'exact' : 'n/a');
+    } else {
+      preview.textContent = '—';
+      status.textContent = res.error;
+    }
+  }
+
+  let raf=false;
+  input.addEventListener('input', ()=>{ if(!raf){ raf=true; requestAnimationFrame(()=>{ update(); raf=false }) }});
+
+  // commit (save) expression
+  commitBtn.addEventListener('click', ()=>{
+    const expr = input.value.trim();
+    const res = evaluate(expr);
+    if(!res.ok || res.value===null){ status.textContent = res.ok? 'Nothing to save' : res.error; return }
+    const item = {expr:expr, value:res.value, ts:Date.now()};
+    history.unshift(item);
+    renderHistory();
+  });
+
+  function renderHistory(){
+    historyEl.innerHTML='';
+    for(const it of history){
+      const el = document.createElement('div'); el.className='hist-item';
+      const e1 = document.createElement('div'); e1.className='expr'; e1.textContent = it.expr;
+      const e2 = document.createElement('div'); e2.className='res'; e2.textContent = formatNumber(it.value);
+      el.appendChild(e1); el.appendChild(e2);
+      el.addEventListener('click', ()=>{ input.value = it.expr; update(); });
+      historyEl.appendChild(el);
+    }
+  }
+
+  copyBtn.addEventListener('click', ()=>{
+    const text = preview.textContent;
+    if(!text || text==='—') return status.textContent='No result to copy';
+    navigator.clipboard.writeText(text).then(()=>{ status.textContent='Copied!'; setTimeout(()=>status.textContent='',900) }).catch(()=>{ status.textContent='Copy failed' });
+  });
+
+  clearBtn.addEventListener('click', ()=>{ input.value=''; update(); input.focus(); status.textContent=''; });
+
+  // keyboard helpers
+  input.addEventListener('keydown', (ev)=>{
+    if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase()==='c'){
+      ev.preventDefault(); // use our own copy flow
+      copyBtn.click();
+    }
+    if(ev.key==='Enter' && !ev.shiftKey){
+      ev.preventDefault(); commitBtn.click();
+    }
+  });
+
+  // initial
+  update();
+})();
+</script>
 </body>
 </html>
